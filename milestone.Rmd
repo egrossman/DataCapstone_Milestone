@@ -1,0 +1,138 @@
+---
+output: html_document
+---
+# Coursera Data Science Capstone Milestone 
+========================================================
+Elan Grossman
+
+7/26/2015
+
+
+Note - This is not my first attempt taking the course, so the creation date may be much older than the actual submission of this data.
+--------------
+
+```{r,echo=FALSE}
+options( java.parameters = "-Xmx4g" )
+library(XLConnect)
+xlcFreeMemory()
+library(tm)
+library(SnowballC)
+library(RWeka)
+library(slam)
+library(tau)
+library(knitr)
+```
+
+## Loading Data
+The first thing we need to do with our data is load it in. They have already been stripped of dos newline characters so that they are read in correctly.
+
+```{r,cache=TRUE}
+setwd("~/Coursera/Capstone/final")
+  blogs <- as.matrix(readLines("Data/blogs.txt"))
+  news <- as.matrix(readLines("Data/news.txt"))
+  tweets <- as.matrix(readLines("Data/twitter.txt"))
+```
+
+The number of lines in each file is:
+Blogs: `r length(blogs)`
+News: `r length(news)`
+Tweets: `r length(tweets)`
+
+## Getting word counts
+If we assume an equal frequency of words over a sample of data, it becomes unnecessary to use every line in the documents. I have taken a random sample of 5% of each Data file to use for my frequency analysis. Although small, we can see from this subset how much data we're going to need to process to get a decent corpus.
+
+In order to get accurate word counts, I loaded the data into a corpus due to it's efficient cleaning methods.
+I can also get a more accurate word count this way. I also removed the more common words such as particles and stemed similar words  (eat and eating) to be treated as the same word.
+```{r,eval=FALSE}
+library(tm)
+res <-Corpus(DirSource("~/Coursera/Capstone/final/sampleData2"), readerControl = list(language = "english"))
+
+#Clean data
+res <- tm_map(res,content_transformer(stripWhitespace),mc.cores=1)
+res <- tm_map(res,content_transformer(removePunctuation),mc.cores=1)
+res <- tm_map(res,content_transformer(tolower),mc.cores=1)
+res <- tm_map(res,content_transformer(removeNumbers),mc.cores=1)
+res <- tm_map(res, content_transformer(removeWords), stopwords("english"),mc.cores=1)
+
+## Here I index each word in the corpus as a term document matrix
+
+tdm <- TermDocumentMatrix(res)
+freq <- inspect(tdm)
+total <- freq[,1] + freq[,2] + freq[,3]
+freq <- cbind(freq,total)
+```
+
+Due to processing issues with knitr, I saved the data used to generate my Term Document Matrix. this data is loaded for convenience
+
+```{r,cache=FALSE}
+load("~/Coursera/Capstone/final/savedData/smallFreq.RData")
+
+freq_blog <- freq[order(freq[,1],decreasing=TRUE),1]
+freq_news <- freq[order(freq[,2],decreasing=TRUE),2]
+freq_tweet <- freq[order(freq[,3],decreasing=TRUE),3]
+freq_total <- freq[order(freq[,4],decreasing=TRUE),4]
+
+```
+
+The total distinct word count of this list is:
+`r length(freq_total)` words
+
+These are the top 10 words for each file (sampled):
+Blogs : `r kable(cbind(frequency = freq_blog[1:10]))`  
+News : `r kable(cbind(frequency = freq_news[1:10]))`  
+Tweets : `r kable(cbind(frequency = freq_tweet[1:10]))`  
+Total : `r kable(cbind(frequency = freq_total[1:10]))`
+
+
+Here is how the top 500 words compare in termes of frequency when sorted by highest frequency
+```{r,echo=FALSE}
+top500 <- freq_total[1:500]
+estimate <- lm(top500 ~ log(1:500))
+barplot(top500,xaxt='n',xlab='Word Ranking',ylab='word frequency',main='Word Frequency by Ranking')
+lines(1:500,predict(estimate),type='l',col='blue',lwd=5)
+```
+
+Notice how the logmarithmic fit for this graph falls flat at about the 400th word. What we see is that the ratio of the most frequent words compared to the next most frequent words is higher than the second most frequent words to the third most frequent words. What this means is that the top words are used at an enormously high rate, and that less frequent words have about an equal probability of being used.
+
+This also means that my bigrams and trigrams will be even more sparse. I will have to use a much larger data set to get more useful data.
+
+#Bigrams and Trigrams
+
+I can also get a list of bigrams and trigrams to show how small this data is. I've created two functions that will split my corpus into birgrams and trigrams respectively. I'm using 1/3 of the total data this time.
+
+``` {r,eval=TRUE,echo =FALSE}
+load("~/Coursera/Capstone/final/savedData/freq2.RData")
+load("~/Coursera/Capstone/final/savedData/freq3.RData")
+
+freq2_total <- freq2_total[order(freq2_total,decreasing=TRUE)]
+freq3_total <- freq3_total[order(freq3_total,decreasing=TRUE)]
+```
+Here are the top counts of each gram:
+
+Bigram: `r kable(cbind(frequency = freq2_total[1:20]))`
+TriGram: `r kable(cbind(frequency = freq3_total[1:20]))`
+
+BigramTotal: `r length(freq2_total)`
+TriTotal: `r length(freq3_total)`
+
+Now, I notice that I'm having trouble with apostrophes! Still, I'm using about 8 times the data as my unigram analysis and my counts for bigrams are in the hundreds for the first two hundred words. 
+
+1 Counts in bigrams: `r length(which(freq2_total == 1 ))`
+1 Counts in trigrams: `r length(which(freq3_total == 1 ))`
+
+85% of the bigram data only has one count
+97% of the trigram data only has one count
+
+As I fix the apostrophes, two things are expected to occur:
+1) The total distinct grams will increase (denominator)
+2) The counts of each gram will decrease (numerator)
+
+My reasoning is that "don t stop" is technically a bigram. It was counted twice for both "don't stop believing" and "don't stop music". If I count this correctly, I would get two more distinct grams with a count of 1.
+
+What this means is that the data is going to look really really sparse.
+
+# Next Steps
+
+Fix the apostrpohe problem! This is really messing with my data. After this, I need to consider an algorithm that accepts the counts and percentages of all bigrams, unigrams, and trigrams in order to decide which word to pick. This is where I will apply Data Science Techniques to model and test my data. Once this is done, I can evaluate how much data I would need to improve my accuracy and apply it to an application!
+
+Thanks for reading my initial analysis. I'm currently struggling more with the technology than the methods. I even have trouble getting my term matrix to generate before my application crashes. However, I'm certain that I will be able to alleviate these problems in the future by trial and error. I am also considering switching to pandas and coding the project in python.
